@@ -82,8 +82,14 @@ class DownloadService {
     _notify();
 
     try {
+      // For Google Drive large files, appending confirm=t bypasses the
+      // "file too large to scan" warning page.
+      final url = lesson.videoProvider == 'google_drive'
+          ? 'https://drive.google.com/uc?export=download&confirm=t&id=${lesson.videoId}'
+          : lesson.downloadUrl;
+
       await _dio.download(
-        lesson.downloadUrl,
+        url,
         savePath,
         cancelToken: cancel,
         onReceiveProgress: (received, total) {

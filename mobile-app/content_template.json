@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "subjects": [
+    {
+      "id": "elective-math",
+      "name": "Elective Mathematics",
+      "icon": "📐",
+      "color": "#6366f1",
+      "description": "Algebra, Calculus, Statistics and more",
+      "sort_order": 1,
+      "topics": [
+        {
+          "id": "emath-algebra",
+          "title": "Algebra",
+          "description": "Quadratics, polynomials, indices",
+          "sort_order": 1,
+          "lessons": [
+            {
+              "id": "emath-algebra-quadratics",
+              "title": "Introduction to Quadratics",
+              "description": "Solving quadratic equations by factorisation and formula",
+              "video_drive_id": "PASTE_GOOGLE_DRIVE_FILE_ID_HERE",
+              "duration_minutes": 25,
+              "sort_order": 1,
+              "questions": [
+                {
+                  "id": "q-quad-1",
+                  "question": "What is the discriminant of x² + 2x + 1 = 0?",
+                  "options": ["0", "4", "-4", "1"],
+                  "correct_answer": 0,
+                  "explanation": "Discriminant = b² - 4ac = (2)² - 4(1)(1) = 4 - 4 = 0",
+                  "source": "WASSCE 2019"
+                },
+                {
+                  "id": "q-quad-2",
+                  "question": "Solve x² - 5x + 6 = 0. What are the roots?",
+                  "options": ["x = 2 and x = 3", "x = -2 and x = -3", "x = 1 and x = 6", "x = -1 and x = -6"],
+                  "correct_answer": 0,
+                  "explanation": "Factorise: (x - 2)(x - 3) = 0, so x = 2 or x = 3",
+                  "source": "WASSCE 2021"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "emath-calculus",
+          "title": "Calculus",
+          "description": "Differentiation and integration",
+          "sort_order": 2,
+          "lessons": [
+            {
+              "id": "emath-calc-differentiation",
+              "title": "Basic Differentiation",
+              "description": "Power rule, product rule, chain rule",
+              "video_drive_id": "PASTE_GOOGLE_DRIVE_FILE_ID_HERE",
+              "duration_minutes": 30,
+              "sort_order": 1,
+              "questions": [
+                {
+                  "id": "q-diff-1",
+                  "question": "Differentiate y = x³ + 2x² - 5. What is dy/dx?",
+                  "options": ["3x² + 4x", "3x² + 4x - 5", "x² + 4x", "3x³ + 4x"],
+                  "correct_answer": 0,
+                  "explanation": "dy/dx = 3x² + 4x. The constant -5 differentiates to 0.",
+                  "source": "WASSCE 2020"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "physics",
+      "name": "Physics",
+      "icon": "⚡",
+      "color": "#f59e0b",
+      "description": "Mechanics, Electricity, Waves and more",
+      "sort_order": 2,
+      "topics": []
+    },
+    {
+      "id": "chemistry",
+      "name": "Chemistry",
+      "icon": "🧪",
+      "color": "#10b981",
+      "description": "Organic, Inorganic and Physical Chemistry",
+      "sort_order": 3,
+      "topics": []
+    },
+    {
+      "id": "biology",
+      "name": "Biology",
+      "icon": "🌿",
+      "color": "#22c55e",
+      "description": "Cell biology, Genetics, Ecology",
+      "sort_order": 4,
+      "topics": []
+    }
+  ]
+}

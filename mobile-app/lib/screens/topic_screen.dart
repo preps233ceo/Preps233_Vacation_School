@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import '../config.dart';
 import '../models.dart';
 import '../services/db_service.dart';
-import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../theme.dart';
 import 'lesson_screen.dart';
@@ -35,32 +35,25 @@ class _TopicScreenState extends State<TopicScreen> {
   }
 
   Future<_TopicData> _load() async {
-    try {
-      await ApiService.syncLessonsForTopic(widget.topic.id);
-    } catch (_) {}
     final lessons = await DbService.getLessonsForTopic(widget.topic.id);
-    final uid = ApiService.userId;
-    Map<String, LessonProgress> progress = {};
-    if (uid != null) {
-      progress = await DbService.getProgressForTopic(uid, widget.topic.id);
-    }
-    // Seed download states from disk
+    final uid = AppConfig.deviceId;
+    final progress = await DbService.getProgressForTopic(uid, widget.topic.id);
     await DownloadService.initStates(lessons.map((l) => l.id).toList());
     return _TopicData(lessons: lessons, progress: progress);
   }
 
-  // Sequential unlock: lesson i is unlocked if lesson i-1 is quiz_passed (or i == 0)
-  bool _isUnlocked(int index, List<Lesson> lessons, Map<String, LessonProgress> progress) {
+  bool _isUnlocked(
+      int index, List<Lesson> lessons, Map<String, LessonProgress> progress) {
     if (index == 0) return true;
-    final prev = lessons[index - 1];
-    return progress[prev.id]?.quizPassed ?? false;
+    return progress[lessons[index - 1].id]?.quizPassed ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        flexibleSpace: Container(decoration: const BoxDecoration(gradient: kHeaderGradient)),
+        flexibleSpace:
+            Container(decoration: const BoxDecoration(gradient: kHeaderGradient)),
         title: Text(widget.topic.title),
       ),
       body: FutureBuilder<_TopicData>(
@@ -76,7 +69,8 @@ class _TopicScreenState extends State<TopicScreen> {
           final progress = snap.data!.progress;
           if (lessons.isEmpty) {
             return const Center(
-              child: Text('No lessons yet', style: TextStyle(color: Colors.grey)),
+              child: Text('No lessons yet.',
+                  style: TextStyle(color: Colors.grey)),
             );
           }
           return ListView.builder(
@@ -87,6 +81,7 @@ class _TopicScreenState extends State<TopicScreen> {
               final prog = progress[lesson.id];
               final unlocked = _isUnlocked(i, lessons, progress);
               final dlState = DownloadService.stateFor(lesson.id);
+
               return _LessonCard(
                 lesson: lesson,
                 index: i,
@@ -98,13 +93,9 @@ class _TopicScreenState extends State<TopicScreen> {
                   await DownloadService.delete(lesson.id);
                   setState(() {});
                 },
-                onTap: unlocked && dlState.status == DownloadStatus.downloaded
+                onTap: unlocked &&
+                        dlState.status == DownloadStatus.downloaded
                     ? () async {
-                        // Sync questions before playing
-                        try {
-                          await ApiService.syncQuestionsForLesson(lesson.id);
-                        } catch (_) {}
-                        if (!context.mounted) return;
                         final result = await Navigator.of(context).push<bool>(
                           MaterialPageRoute(
                             builder: (_) => LessonScreen(
@@ -114,9 +105,7 @@ class _TopicScreenState extends State<TopicScreen> {
                           ),
                         );
                         if (result == true) {
-                          setState(() {
-                            _future = _load();
-                          });
+                          setState(() { _future = _load(); });
                         }
                       }
                     : null,
@@ -160,7 +149,8 @@ class _LessonCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final quizPassed = progress?.quizPassed ?? false;
     final watchPct = lesson.durationSeconds > 0
-        ? ((progress?.watchSeconds ?? 0) / lesson.durationSeconds).clamp(0.0, 1.0)
+        ? ((progress?.watchSeconds ?? 0) / lesson.durationSeconds)
+            .clamp(0.0, 1.0)
         : 0.0;
 
     return Card(
@@ -175,7 +165,6 @@ class _LessonCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  // Status icon
                   Container(
                     width: 36,
                     height: 36,
@@ -218,14 +207,12 @@ class _LessonCard extends StatelessWidget {
                                 : Colors.grey,
                           ),
                         ),
-                        Text(
-                          lesson.formattedDuration,
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
+                        Text(lesson.formattedDuration,
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.grey)),
                       ],
                     ),
                   ),
-                  // Download button / status
                   _DownloadButton(
                     state: downloadState,
                     onDownload: onDownload,
@@ -239,7 +226,9 @@ class _LessonCard extends StatelessWidget {
                   value: watchPct,
                   backgroundColor: const Color(0xFFE2E8F0),
                   valueColor: AlwaysStoppedAnimation(
-                    quizPassed ? const Color(0xFF10B981) : const Color(0xFF6366F1),
+                    quizPassed
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFF6366F1),
                   ),
                   borderRadius: BorderRadius.circular(4),
                   minHeight: 4,
@@ -271,13 +260,13 @@ class _DownloadButton extends StatelessWidget {
         return IconButton(
           icon: const Icon(Icons.download_outlined),
           color: const Color(0xFF6366F1),
-          tooltip: 'Download',
+          tooltip: 'Download video',
           onPressed: onDownload,
         );
       case DownloadStatus.downloading:
         return SizedBox(
-          width: 40,
-          height: 40,
+          width: 44,
+          height: 44,
           child: Stack(
             alignment: Alignment.center,
             children: [
@@ -288,7 +277,8 @@ class _DownloadButton extends StatelessWidget {
               ),
               Text(
                 '${(state.progress * 100).toInt()}%',
-                style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                    fontSize: 8, fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -297,29 +287,34 @@ class _DownloadButton extends StatelessWidget {
         return IconButton(
           icon: const Icon(Icons.check_circle_outline),
           color: const Color(0xFF10B981),
-          tooltip: 'Downloaded — tap to delete',
-          onPressed: () {
-            showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: const Text('Delete video?'),
-                content: const Text('This will remove the downloaded file. You can re-download it later.'),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-                  TextButton(
-                    onPressed: () { Navigator.pop(context); onDelete(); },
-                    child: const Text('Delete', style: TextStyle(color: Colors.red)),
-                  ),
-                ],
-              ),
-            );
-          },
+          tooltip: 'Downloaded',
+          onPressed: () => showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('Delete downloaded video?'),
+              content: const Text(
+                  'You can re-download it any time you have internet.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Keep')),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    onDelete();
+                  },
+                  child: const Text('Delete',
+                      style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            ),
+          ),
         );
       case DownloadStatus.failed:
         return IconButton(
           icon: const Icon(Icons.error_outline),
           color: Colors.red,
-          tooltip: 'Download failed — retry',
+          tooltip: 'Failed — tap to retry',
           onPressed: onDownload,
         );
     }

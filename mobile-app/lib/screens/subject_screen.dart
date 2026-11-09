@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import '../config.dart';
 import '../models.dart';
 import '../services/db_service.dart';
-import '../services/api_service.dart';
 import '../theme.dart';
 import 'topic_screen.dart';
 
@@ -23,31 +23,26 @@ class _SubjectScreenState extends State<SubjectScreen> {
   }
 
   Future<_SubjectData> _load() async {
-    // Try to sync from cloud
-    try {
-      await ApiService.syncTopicsForSubject(widget.subject.id);
-    } catch (_) {}
-    final topics =
-        await DbService.getTopicsForSubject(widget.subject.id);
-    // Load lesson counts and progress per topic
-    final uid = ApiService.userId;
-    Map<String, int> lessonCounts = {};
-    Map<String, int> passedCounts = {};
+    final topics = await DbService.getTopicsForSubject(widget.subject.id);
+    final uid = AppConfig.deviceId;
+    final Map<String, int> lessonCounts = {};
+    final Map<String, int> passedCounts = {};
     for (final t in topics) {
       final lessons = await DbService.getLessonsForTopic(t.id);
       lessonCounts[t.id] = lessons.length;
-      if (uid != null) {
-        final prog = await DbService.getProgressForTopic(uid, t.id);
-        passedCounts[t.id] =
-            prog.values.where((p) => p.quizPassed).length;
-      }
+      final prog = await DbService.getProgressForTopic(uid, t.id);
+      passedCounts[t.id] = prog.values.where((p) => p.quizPassed).length;
     }
-    return _SubjectData(topics: topics, lessonCounts: lessonCounts, passedCounts: passedCounts);
+    return _SubjectData(
+        topics: topics,
+        lessonCounts: lessonCounts,
+        passedCounts: passedCounts);
   }
 
   Color get _accent {
     try {
-      return Color(int.parse(widget.subject.color.replaceAll('#', '0xFF')));
+      return Color(
+          int.parse(widget.subject.color.replaceAll('#', '0xFF')));
     } catch (_) {
       return const Color(0xFF6366F1);
     }
@@ -62,29 +57,26 @@ class _SubjectScreenState extends State<SubjectScreen> {
           return CustomScrollView(
             slivers: [
               SliverAppBar(
-                expandedHeight: 140,
+                expandedHeight: 150,
                 pinned: true,
                 flexibleSpace: FlexibleSpaceBar(
                   title: Text(widget.subject.name),
                   background: Container(
-                    decoration: const BoxDecoration(gradient: kHeaderGradient),
+                    decoration:
+                        const BoxDecoration(gradient: kHeaderGradient),
                     child: Center(
-                      child: Text(
-                        widget.subject.icon,
-                        style: const TextStyle(fontSize: 56),
-                      ),
+                      child: Text(widget.subject.icon,
+                          style: const TextStyle(fontSize: 60)),
                     ),
                   ),
                 ),
               ),
               if (snap.connectionState == ConnectionState.waiting)
                 const SliverFillRemaining(
-                  child: Center(child: CircularProgressIndicator()),
-                )
+                    child: Center(child: CircularProgressIndicator()))
               else if (snap.hasError)
                 SliverFillRemaining(
-                  child: Center(child: Text('Error: ${snap.error}')),
-                )
+                    child: Center(child: Text('Error: ${snap.error}')))
               else
                 SliverPadding(
                   padding: const EdgeInsets.all(16),
@@ -94,15 +86,16 @@ class _SubjectScreenState extends State<SubjectScreen> {
                         final topics = snap.data!.topics;
                         if (i >= topics.length) return null;
                         final topic = topics[i];
-                        final count = snap.data!.lessonCounts[topic.id] ?? 0;
-                        final passed = snap.data!.passedCounts[topic.id] ?? 0;
-                        final progress = count > 0 ? passed / count : 0.0;
+                        final count =
+                            snap.data!.lessonCounts[topic.id] ?? 0;
+                        final passed =
+                            snap.data!.passedCounts[topic.id] ?? 0;
                         return _TopicCard(
                           topic: topic,
                           index: i,
                           lessonCount: count,
                           passedCount: passed,
-                          progress: progress,
+                          progress: count > 0 ? passed / count : 0.0,
                           accent: _accent,
                         );
                       },
@@ -122,7 +115,10 @@ class _SubjectData {
   final List<Topic> topics;
   final Map<String, int> lessonCounts;
   final Map<String, int> passedCounts;
-  _SubjectData({required this.topics, required this.lessonCounts, required this.passedCounts});
+  _SubjectData(
+      {required this.topics,
+      required this.lessonCounts,
+      required this.passedCounts});
 }
 
 class _TopicCard extends StatelessWidget {
@@ -166,11 +162,10 @@ class _TopicCard extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                     child: Center(
-                      child: Text(
-                        '${index + 1}',
-                        style: TextStyle(
-                            color: accent, fontWeight: FontWeight.bold),
-                      ),
+                      child: Text('${index + 1}',
+                          style: TextStyle(
+                              color: accent,
+                              fontWeight: FontWeight.bold)),
                     ),
                   ),
                   const SizedBox(width: 12),

@@ -3,31 +3,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config.dart';
 import 'screens/splash_screen.dart';
 import 'theme.dart';
-
-// ── Configure these before building ─────────────────────────────────────────
-// 1. Create a Supabase project at https://supabase.com
-// 2. Run supabase/schema.sql from the web platform folder
-// 3. Paste your project URL and anon key below
-const _supabaseUrl = 'https://YOUR_PROJECT.supabase.co';
-const _supabaseAnonKey = 'YOUR_ANON_KEY_HERE';
-// ─────────────────────────────────────────────────────────────────────────────
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Desktop SQLite driver (Windows / Linux)
+  // Desktop SQLite driver
   if (Platform.isWindows || Platform.isLinux) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
 
-  // Cross-platform video player
   MediaKit.ensureInitialized();
 
-  // Allow both orientations on mobile
   if (Platform.isAndroid || Platform.isIOS) {
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -36,10 +26,7 @@ void main() async {
     ]);
   }
 
-  await Supabase.initialize(
-    url: _supabaseUrl,
-    anonKey: _supabaseAnonKey,
-  );
+  await AppConfig.init();
 
   runApp(const Preps233App());
 }

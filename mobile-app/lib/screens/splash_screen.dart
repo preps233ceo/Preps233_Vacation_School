@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/api_service.dart';
+import '../config.dart';
+import '../services/drive_service.dart';
 import '../theme.dart';
-import 'login_screen.dart';
+import 'onboarding_screen.dart';
 import 'home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -13,6 +13,8 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  String _status = 'Loading…';
+
   @override
   void initState() {
     super.initState();
@@ -20,26 +22,32 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _init() async {
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return;
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      _go(const LoginScreen());
+    // First launch — ask for student name
+    if (!AppConfig.hasName) {
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const OnboardingScreen()));
       return;
     }
-    // Sync content in background
-    try {
-      await ApiService.syncSubjects();
-      await ApiService.pullProgress();
-    } catch (_) {}
-    if (!mounted) return;
-    _go(const HomeScreen());
-  }
 
-  void _go(Widget page) {
+    // Try to sync content from Drive (skip if offline / already synced today)
+    final lastSync = AppConfig.lastSynced;
+    final shouldSync = lastSync == null ||
+        DateTime.now().difference(lastSync).inHours >= 24;
+
+    if (shouldSync) {
+      setState(() => _status = 'Syncing content…');
+      try {
+        await DriveService.syncContent();
+      } catch (_) {
+        // Offline — use cached content
+      }
+    }
+
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => page),
-    );
+        MaterialPageRoute(builder: (_) => const HomeScreen()));
   }
 
   @override
@@ -47,33 +55,38 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(gradient: kHeaderGradient),
-        child: const Center(
+        child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
+              const Text(
                 'Preps233',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 36,
-                  fontWeight: FontWeight.w800,
+                  fontSize: 40,
+                  fontWeight: FontWeight.w900,
                   letterSpacing: -1,
                 ),
               ),
-              SizedBox(height: 8),
-              Text(
-                'Learn',
+              const SizedBox(height: 6),
+              const Text(
+                'LEARN',
                 style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 4,
+                  color: Colors.white38,
+                  fontSize: 14,
+                  letterSpacing: 6,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              SizedBox(height: 48),
-              CircularProgressIndicator(
+              const SizedBox(height: 56),
+              const CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(Colors.white38),
                 strokeWidth: 2,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _status,
+                style: const TextStyle(color: Colors.white38, fontSize: 13),
               ),
             ],
           ),

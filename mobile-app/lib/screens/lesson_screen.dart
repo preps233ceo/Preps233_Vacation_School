@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import '../config.dart';
 import '../models.dart';
 import '../services/db_service.dart';
-import '../services/api_service.dart';
 
-const double _kUnlockThreshold = 0.70; // 70% watch to unlock quiz
-const int _kPassMark = 80;              // 80% to pass quiz
+const double _kUnlockThreshold = 0.70;
+const int _kPassMark = 80;
 
 class LessonScreen extends StatefulWidget {
   final Lesson lesson;
@@ -26,47 +25,38 @@ class LessonScreen extends StatefulWidget {
 
 class _LessonScreenState extends State<LessonScreen>
     with WidgetsBindingObserver {
-  // Video
   late final Player _player;
   late final VideoController _videoCtrl;
   Timer? _watchTimer;
   int _watchSeconds = 0;
   bool _isForeground = true;
 
-  // Quiz
   List<Question> _questions = [];
   final Map<int, int> _answers = {};
   bool _quizSubmitted = false;
-  QuizResult? _quizResult;
+  _QuizResult? _quizResult;
 
-  // Progress
   LessonProgress? _progress;
-  String? _userId;
-  String? _userEmail;
+  final String _deviceId = AppConfig.deviceId;
+  final String _studentName = AppConfig.studentName;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _userId = ApiService.userId;
-    _userEmail = ApiService.userEmail;
     _player = Player();
     _videoCtrl = VideoController(_player);
     _initLoad();
   }
 
   Future<void> _initLoad() async {
-    if (_userId != null) {
-      _progress = await DbService.getProgress(_userId!, widget.lesson.id);
-    }
+    _progress = await DbService.getProgress(_deviceId, widget.lesson.id);
     _watchSeconds = _progress?.watchSeconds ?? 0;
     _questions = await DbService.getQuestionsForLesson(widget.lesson.id);
     if (mounted) setState(() {});
 
-    // Open local video file
     await _player.open(Media('file://${widget.localPath}'));
 
-    // Start watch timer
     _watchTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!_isForeground || !_player.state.playing) return;
       setState(() {
@@ -75,7 +65,6 @@ class _LessonScreenState extends State<LessonScreen>
       });
     });
 
-    // Auto-save every 15s
     Timer.periodic(const Duration(seconds: 15), (_) => _saveProgress());
   }
 
@@ -89,13 +78,9 @@ class _LessonScreenState extends State<LessonScreen>
   }
 
   Future<void> _saveProgress() async {
-    if (_userId == null) return;
     final completed = _watchSeconds >= widget.lesson.durationSeconds;
     await DbService.updateWatchProgress(
-        _userId!, widget.lesson.id, _watchSeconds, completed);
-    // Best-effort cloud sync
-    final p = await DbService.getProgress(_userId!, widget.lesson.id);
-    if (p != null) ApiService.pushProgress(p);
+        _deviceId, widget.lesson.id, _watchSeconds, completed);
   }
 
   @override
@@ -106,8 +91,6 @@ class _LessonScreenState extends State<LessonScreen>
     _player.dispose();
     super.dispose();
   }
-
-  // ── Quiz logic ───────────────────────────────────────────────────────────────
 
   bool get _quizUnlocked {
     if (widget.lesson.durationSeconds <= 0) return true;
@@ -127,35 +110,30 @@ class _LessonScreenState extends State<LessonScreen>
     }
 
     int correct = 0;
-    final results = <QuizItemResult>[];
+    final results = <_QuizItemResult>[];
     for (int i = 0; i < _questions.length; i++) {
       final q = _questions[i];
       final given = _answers[i] ?? -1;
       final isCorrect = given == q.correctAnswer;
       if (isCorrect) correct++;
-      results.add(QuizItemResult(
+      results.add(_QuizItemResult(
         correct: isCorrect,
         correctOptionIndex: q.correctAnswer,
         explanation: q.explanation,
       ));
     }
     final score =
-        (_questions.isNotEmpty ? (correct / _questions.length) * 100 : 0).round();
+        (_questions.isNotEmpty ? (correct / _questions.length) * 100 : 0)
+            .round();
     final passed = score >= _kPassMark;
-
     final attempts = (_progress?.quizAttempts ?? 0) + 1;
-    if (_userId != null) {
-      await DbService.saveQuizResult(_userId!, widget.lesson.id, score, passed, attempts);
-      final p = await DbService.getProgress(_userId!, widget.lesson.id);
-      if (p != null) {
-        ApiService.pushProgress(p);
-        setState(() => _progress = p);
-      }
-    }
+
+    await DbService.saveQuizResult(_deviceId, widget.lesson.id, score, passed, attempts);
+    _progress = await DbService.getProgress(_deviceId, widget.lesson.id);
 
     setState(() {
-      _quizResult = QuizResult(
-          score: score, passed: passed, results: results, totalQuestions: _questions.length);
+      _quizResult = _QuizResult(
+          score: score, passed: passed, results: results);
       _quizSubmitted = true;
     });
   }
@@ -168,8 +146,6 @@ class _LessonScreenState extends State<LessonScreen>
     });
   }
 
-  // ── Build ────────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -178,7 +154,8 @@ class _LessonScreenState extends State<LessonScreen>
         backgroundColor: const Color(0xFF0F172A),
         foregroundColor: Colors.white,
         title: Text(widget.lesson.title,
-            style: const TextStyle(fontSize: 15), overflow: TextOverflow.ellipsis),
+            style: const TextStyle(fontSize: 15),
+            overflow: TextOverflow.ellipsis),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -205,7 +182,6 @@ class _LessonScreenState extends State<LessonScreen>
             aspectRatio: 16 / 9,
             child: Video(controller: _videoCtrl),
           ),
-          // App-switched overlay
           if (!_isForeground)
             Positioned.fill(
               child: Container(
@@ -230,20 +206,19 @@ class _LessonScreenState extends State<LessonScreen>
                 ),
               ),
             ),
-          // Email watermark
-          if (_userEmail != null)
-            ..._buildWatermarks(_userEmail!),
+          // Name watermark at 5 positions
+          ..._buildWatermarks(_studentName),
         ],
       ),
     );
   }
 
-  List<Widget> _buildWatermarks(String email) {
-    final positions = [
-      const Alignment(-0.9, -0.85),
-      const Alignment(0.9, -0.85),
-      const Alignment(-0.9, 0.85),
-      const Alignment(0.9, 0.85),
+  List<Widget> _buildWatermarks(String name) {
+    const positions = [
+      Alignment(-0.9, -0.85),
+      Alignment(0.9, -0.85),
+      Alignment(-0.9, 0.85),
+      Alignment(0.9, 0.85),
       Alignment.center,
     ];
     return positions
@@ -253,10 +228,10 @@ class _LessonScreenState extends State<LessonScreen>
                 child: Transform.rotate(
                   angle: -0.4,
                   child: Text(
-                    email,
+                    name,
                     style: const TextStyle(
                       color: Colors.white24,
-                      fontSize: 10,
+                      fontSize: 11,
                       fontFamily: 'monospace',
                     ),
                   ),
@@ -287,12 +262,11 @@ class _LessonScreenState extends State<LessonScreen>
             children: [
               Text('Watch progress',
                   style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[700],
-                  )),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700])),
               Text(
-                '${_fmtDuration(_watchSeconds)} / ${_fmtDuration(dur)}',
+                '${_fmt(_watchSeconds)} / ${_fmt(dur)}',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
@@ -311,7 +285,7 @@ class _LessonScreenState extends State<LessonScreen>
           Text(
             _quizUnlocked
                 ? '✓ Quiz unlocked'
-                : 'Watch ${_fmtDuration(remaining)} more to unlock quiz',
+                : 'Watch ${_fmt(remaining)} more to unlock quiz',
             style: TextStyle(
               fontSize: 12,
               color: _quizUnlocked ? const Color(0xFF10B981) : Colors.grey,
@@ -343,26 +317,9 @@ class _LessonScreenState extends State<LessonScreen>
                       fontSize: 15, fontWeight: FontWeight.w700),
                 ),
                 if (!_quizUnlocked)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text('🔒 Watch 70%',
-                        style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  )
+                  _chip('🔒 Watch 70%', Colors.grey)
                 else if (_progress?.quizPassed ?? false)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD1FAE5),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text('✓ Passed',
-                        style: TextStyle(
-                            fontSize: 11, color: Color(0xFF059669), fontWeight: FontWeight.w600)),
-                  ),
+                  _chip('✓ Passed', const Color(0xFF059669)),
               ],
             ),
           ),
@@ -392,13 +349,24 @@ class _LessonScreenState extends State<LessonScreen>
     );
   }
 
+  Widget _chip(String text, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(text,
+            style: TextStyle(
+                fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+      );
+
   Widget _buildQuestionsView() {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (_progress != null && (_progress!.quizAttempts) > 0 && !(_progress!.quizPassed))
+          if ((_progress?.quizAttempts ?? 0) > 0 && !(_progress?.quizPassed ?? false))
             Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(10),
@@ -407,15 +375,17 @@ class _LessonScreenState extends State<LessonScreen>
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                'Last score: ${_progress!.quizScore}% — you need 80% to pass.',
+                'Last score: ${_progress!.quizScore}% — you need 80%.',
                 style: const TextStyle(fontSize: 13, color: Color(0xFF92400E)),
               ),
             ),
           ..._questions.asMap().entries.map((e) => _buildQuestion(e.key, e.value)),
           const SizedBox(height: 8),
           ElevatedButton(
-            onPressed: _answers.length == _questions.length ? _submitQuiz : null,
-            child: Text('Submit Quiz (${_answers.length}/${_questions.length} answered)'),
+            onPressed:
+                _answers.length == _questions.length ? _submitQuiz : null,
+            child: Text(
+                'Submit Quiz (${_answers.length}/${_questions.length} answered)'),
           ),
         ],
       ),
@@ -434,18 +404,16 @@ class _LessonScreenState extends State<LessonScreen>
                 TextSpan(
                   text: '${qi + 1}. ',
                   style: const TextStyle(
-                    color: Color(0xFF6366F1),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
+                      color: Color(0xFF6366F1),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14),
                 ),
                 TextSpan(
                   text: q.question,
                   style: const TextStyle(
-                    color: Color(0xFF1E293B),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
+                      color: Color(0xFF1E293B),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14),
                 ),
               ],
             ),
@@ -456,7 +424,8 @@ class _LessonScreenState extends State<LessonScreen>
                 style: const TextStyle(fontSize: 11, color: Colors.grey)),
           ],
           const SizedBox(height: 8),
-          ...q.options.asMap().entries.map((o) => _buildOption(qi, o.key, o.value)),
+          ...q.options.asMap().entries
+              .map((o) => _buildOption(qi, o.key, o.value)),
         ],
       ),
     );
@@ -473,7 +442,9 @@ class _LessonScreenState extends State<LessonScreen>
           color: selected ? const Color(0xFFEEF2FF) : const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: selected ? const Color(0xFF6366F1) : const Color(0xFFE2E8F0),
+            color: selected
+                ? const Color(0xFF6366F1)
+                : const Color(0xFFE2E8F0),
             width: selected ? 1.5 : 1,
           ),
         ),
@@ -485,10 +456,13 @@ class _LessonScreenState extends State<LessonScreen>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: selected ? const Color(0xFF6366F1) : const Color(0xFFCBD5E1),
+                  color: selected
+                      ? const Color(0xFF6366F1)
+                      : const Color(0xFFCBD5E1),
                   width: 2,
                 ),
-                color: selected ? const Color(0xFF6366F1) : Colors.transparent,
+                color:
+                    selected ? const Color(0xFF6366F1) : Colors.transparent,
               ),
               child: selected
                   ? const Icon(Icons.circle, size: 10, color: Colors.white)
@@ -499,7 +473,9 @@ class _LessonScreenState extends State<LessonScreen>
               child: Text(text,
                   style: TextStyle(
                     fontSize: 14,
-                    color: selected ? const Color(0xFF6366F1) : const Color(0xFF334155),
+                    color: selected
+                        ? const Color(0xFF6366F1)
+                        : const Color(0xFF334155),
                   )),
             ),
           ],
@@ -515,7 +491,6 @@ class _LessonScreenState extends State<LessonScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Score card
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
@@ -524,37 +499,40 @@ class _LessonScreenState extends State<LessonScreen>
                   : const Color(0xFFFEF2F2),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: r.passed
-                    ? const Color(0xFFA7F3D0)
-                    : const Color(0xFFFECACA),
-              ),
+                  color: r.passed
+                      ? const Color(0xFFA7F3D0)
+                      : const Color(0xFFFECACA)),
             ),
             child: Column(
               children: [
                 Text(r.passed ? '🎉' : '😔',
-                    style: const TextStyle(fontSize: 40)),
+                    style: const TextStyle(fontSize: 44)),
                 const SizedBox(height: 8),
                 Text('${r.score}%',
                     style: TextStyle(
-                      fontSize: 48,
+                      fontSize: 52,
                       fontWeight: FontWeight.w900,
                       color: r.passed
                           ? const Color(0xFF059669)
                           : const Color(0xFFDC2626),
                     )),
                 Text(
-                  r.passed ? 'Congratulations! You passed.' : 'Not quite — keep going!',
+                  r.passed
+                      ? 'Congratulations! You passed.'
+                      : 'Not quite — keep going!',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: r.passed ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                    color: r.passed
+                        ? const Color(0xFF059669)
+                        : const Color(0xFFDC2626),
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   r.passed
                       ? 'You may proceed to the next lesson.'
-                      : 'You need 80% to pass. Review and try again.',
+                      : 'You need 80% to pass. Try again.',
                   style: const TextStyle(fontSize: 13, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
@@ -562,7 +540,6 @@ class _LessonScreenState extends State<LessonScreen>
             ),
           ),
           const SizedBox(height: 16),
-          // Per-question feedback
           ..._questions.asMap().entries.map((e) {
             final qi = e.key;
             final q = e.value;
@@ -576,10 +553,9 @@ class _LessonScreenState extends State<LessonScreen>
                     : const Color(0xFFFEF2F2),
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: qr.correct
-                      ? const Color(0xFFA7F3D0)
-                      : const Color(0xFFFECACA),
-                ),
+                    color: qr.correct
+                        ? const Color(0xFFA7F3D0)
+                        : const Color(0xFFFECACA)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -587,8 +563,7 @@ class _LessonScreenState extends State<LessonScreen>
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(qr.correct ? '✅' : '❌',
-                          style: const TextStyle(fontSize: 16)),
+                      Text(qr.correct ? '✅' : '❌'),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(q.question,
@@ -599,23 +574,21 @@ class _LessonScreenState extends State<LessonScreen>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
                   Text(
                     'Your answer: ${q.options[_answers[qi] ?? 0]}',
                     style: TextStyle(
-                      fontSize: 12,
-                      color: qr.correct
-                          ? const Color(0xFF059669)
-                          : const Color(0xFFDC2626),
-                    ),
+                        fontSize: 12,
+                        color: qr.correct
+                            ? const Color(0xFF059669)
+                            : const Color(0xFFDC2626)),
                   ),
-                  if (!qr.correct) ...[
+                  if (!qr.correct)
                     Text(
                       'Correct: ${q.options[qr.correctOptionIndex]}',
                       style: const TextStyle(
                           fontSize: 12, color: Color(0xFF059669)),
                     ),
-                  ],
                   if (qr.explanation != null) ...[
                     const SizedBox(height: 6),
                     Container(
@@ -625,7 +598,8 @@ class _LessonScreenState extends State<LessonScreen>
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text('💡 ${qr.explanation}',
-                          style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.grey)),
                     ),
                   ],
                 ],
@@ -633,64 +607,41 @@ class _LessonScreenState extends State<LessonScreen>
             );
           }),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              if (!r.passed) ...[
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _retakeQuiz,
-                    child: const Text('Retake Quiz'),
-                  ),
-                ),
-              ] else ...[
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF10B981),
-                    ),
-                    onPressed: () => Navigator.of(context).pop(true),
-                    child: const Text('Done ✓'),
-                  ),
-                ),
-              ],
-            ],
-          ),
+          if (!r.passed)
+            ElevatedButton(onPressed: _retakeQuiz, child: const Text('Retake Quiz'))
+          else
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981)),
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Done ✓'),
+            ),
         ],
       ),
     );
   }
 
-  String _fmtDuration(int secs) {
+  String _fmt(int secs) {
     final m = secs ~/ 60;
     final s = secs % 60;
     return s == 0 ? '${m}m' : '${m}m ${s.toString().padLeft(2, "0")}s';
   }
 }
 
-// ── Result models ─────────────────────────────────────────────────────────────
-
-class QuizResult {
+class _QuizResult {
   final int score;
   final bool passed;
-  final List<QuizItemResult> results;
-  final int totalQuestions;
-
-  const QuizResult({
-    required this.score,
-    required this.passed,
-    required this.results,
-    required this.totalQuestions,
-  });
+  final List<_QuizItemResult> results;
+  const _QuizResult(
+      {required this.score, required this.passed, required this.results});
 }
 
-class QuizItemResult {
+class _QuizItemResult {
   final bool correct;
   final int correctOptionIndex;
   final String? explanation;
-
-  const QuizItemResult({
-    required this.correct,
-    required this.correctOptionIndex,
-    this.explanation,
-  });
+  const _QuizItemResult(
+      {required this.correct,
+      required this.correctOptionIndex,
+      this.explanation});
 }

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import '../config.dart';
 import '../models.dart';
 import '../services/db_service.dart';
-import '../services/api_service.dart';
+import '../services/drive_service.dart';
 import '../theme.dart';
-import 'login_screen.dart';
 import 'subject_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -15,6 +15,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late Future<List<Subject>> _subjectsFuture;
+  bool _syncing = false;
 
   @override
   void initState() {
@@ -23,75 +24,126 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _refresh() async {
+    setState(() => _syncing = true);
     try {
-      await ApiService.syncSubjects();
-    } catch (_) {}
-    setState(() {
-      _subjectsFuture = DbService.getSubjects();
-    });
-  }
-
-  Future<void> _signOut() async {
-    await ApiService.signOut();
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()));
+      await DriveService.syncContent();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not sync — using cached content'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _syncing = false;
+          _subjectsFuture = DbService.getSubjects();
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        flexibleSpace: Container(decoration: const BoxDecoration(gradient: kHeaderGradient)),
+        flexibleSpace:
+            Container(decoration: const BoxDecoration(gradient: kHeaderGradient)),
         title: const Text('Preps233 Learn'),
         actions: [
+          if (_syncing)
+            const Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white54),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.sync, color: Colors.white70),
+              tooltip: 'Sync content',
+              onPressed: _refresh,
+            ),
+        ],
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Student greeting
           Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: TextButton.icon(
-              onPressed: _signOut,
-              icon: const Icon(Icons.logout, size: 16, color: Colors.white54),
-              label: Text(
-                ApiService.userEmail ?? '',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-                overflow: TextOverflow.ellipsis,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text(
+              'Hello, ${AppConfig.studentName} 👋',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1E293B),
               ),
             ),
           ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Text(
+              'Choose a subject to begin',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+          ),
+          Expanded(
+            child: FutureBuilder<List<Subject>>(
+              future: _subjectsFuture,
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final subjects = snap.data ?? [];
+                if (subjects.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_off_outlined,
+                            size: 56, color: Colors.grey),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No content yet',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Connect to the internet and tap sync.',
+                          style: TextStyle(color: Colors.grey, fontSize: 13),
+                        ),
+                        const SizedBox(height: 20),
+                        ElevatedButton.icon(
+                          onPressed: _refresh,
+                          icon: const Icon(Icons.sync),
+                          label: const Text('Sync now'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  itemCount: subjects.length,
+                  itemBuilder: (context, i) =>
+                      _SubjectCard(subject: subjects[i]),
+                );
+              },
+            ),
+          ),
         ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _refresh,
-        child: FutureBuilder<List<Subject>>(
-          future: _subjectsFuture,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snap.hasError) {
-              return Center(child: Text('Error: ${snap.error}'));
-            }
-            final subjects = snap.data ?? [];
-            if (subjects.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.school_outlined, size: 64, color: Colors.grey),
-                    const SizedBox(height: 12),
-                    const Text('No subjects yet', style: TextStyle(color: Colors.grey)),
-                    const SizedBox(height: 20),
-                    TextButton(onPressed: _refresh, child: const Text('Refresh')),
-                  ],
-                ),
-              );
-            }
-            return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: subjects.length,
-              itemBuilder: (context, i) => _SubjectCard(subject: subjects[i]),
-            );
-          },
-        ),
       ),
     );
   }
@@ -103,7 +155,6 @@ class _SubjectCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Parse hex color like "#6366f1"
     Color accent;
     try {
       accent = Color(int.parse(subject.color.replaceAll('#', '0xFF')));
@@ -123,14 +174,15 @@ class _SubjectCard extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 56,
-                height: 56,
+                width: 60,
+                height: 60,
                 decoration: BoxDecoration(
                   color: accent.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Center(
-                  child: Text(subject.icon, style: const TextStyle(fontSize: 28)),
+                  child: Text(subject.icon,
+                      style: const TextStyle(fontSize: 32)),
                 ),
               ),
               const SizedBox(width: 16),
@@ -150,8 +202,8 @@ class _SubjectCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         subject.description!,
-                        style: const TextStyle(
-                            fontSize: 13, color: Colors.grey),
+                        style:
+                            const TextStyle(fontSize: 13, color: Colors.grey),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

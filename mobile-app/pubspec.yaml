@@ -10,10 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Auth + cloud sync
-  supabase_flutter: ^2.3.4
-
-  # Local database (SQLite — works on Android and Windows)
+  # Local database
   sqflite: ^2.3.2
   sqflite_common_ffi: ^2.3.3+1   # required for Windows / Linux
 
@@ -21,18 +18,20 @@ dependencies:
   path_provider: ^2.1.2
   path: ^1.9.0
 
-  # Cross-platform video player (Android + Windows via libmpv)
+  # Cross-platform video player
   media_kit: ^1.1.10
   media_kit_video: ^1.2.4
-  media_kit_libs_video: ^1.0.4   # pre-built native libs
+  media_kit_libs_video: ^1.0.4
 
-  # Downloading video files with progress
+  # Downloading files (content.json + videos) from Google Drive
   dio: ^5.4.0
 
-  # Misc
+  # Persist student name + device ID across launches
   shared_preferences: ^2.2.2
-  connectivity_plus: ^5.0.2
+
+  # Misc
   intl: ^0.19.0
+  uuid: ^4.3.3
   cupertino_icons: ^1.0.6
 
 dev_dependencies:
